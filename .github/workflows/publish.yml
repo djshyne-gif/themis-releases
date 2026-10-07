@@ -1,0 +1,32 @@
+# Lives in the PUBLIC repository djshyne-gif/themis-releases. Started by the Release build of themis-app once a draft
+# is ready; waits for Shyne's "Approve" (environment "clients", required reviewer) before the update reaches clients.
+name: Publish
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (the draft must exist)"
+        required: true
+permissions:
+  contents: write
+jobs:
+  publish:
+    name: Publish THEMIS ${{ inputs.version }} to clients
+    runs-on: ubuntu-latest
+    environment: clients
+    env:
+      GH_TOKEN: ${{ github.token }}
+      V: ${{ inputs.version }}
+    steps:
+      - name: The draft holds exactly the 3 expected files
+        run: |
+          gh release view "v$V" --repo "$GITHUB_REPOSITORY" --json isDraft,assets -q '[.isDraft, (.assets|map(.name)|sort|join(","))]|@tsv' > r.txt
+          cat r.txt
+          test "$(cut -f1 r.txt)" = "true" || { echo "::error::v$V is not a draft"; exit 1; }
+          test "$(cut -f2 r.txt)" = "THEMIS-$V.app.tar.gz,THEMIS-$V.app.tar.gz.sig,latest.json" || { echo "::error::unexpected files"; exit 1; }
+      - name: Publish (installed THEMIS apps offer it within 6 hours)
+        run: gh release edit "v$V" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+      - name: Check what clients now read
+        run: |
+          sleep 5
+          test "$(curl -sL "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/latest.json" | jq -r .version)" = "$V"
